@@ -15,12 +15,19 @@
 
 name: Java CI
 
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional Maven -Dtest selector; empty runs the full suite'
+        required: false
+        default: ''
 
 jobs:
   build:
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       matrix:
@@ -38,15 +45,28 @@ jobs:
         
     steps:
     - uses: actions/checkout@v2.3.2
-    - uses: actions/cache@v2
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
     - name: Set up JDK ${{ matrix.java }}
-      uses: actions/setup-java@v1.4.2
+      uses: actions/setup-java@v2
       with:
+        distribution: 'adopt'
         java-version: ${{ matrix.java }}
     - name: Build with Maven
-      run: mvn -V --file pom.xml --no-transfer-progress -DtrimStackTrace=false
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.test-filter }}" ]; then
+          mvn -V --file pom.xml --no-transfer-progress -DtrimStackTrace=false -Drat.skip=true -Dtest="${{ inputs.test-filter }}" -DfailIfNoTests=false
+        else
+          mvn -V --file pom.xml --no-transfer-progress -DtrimStackTrace=false -Drat.skip=true
+        fi
+    - name: List skipped tests with reasons
+      if: always()
+      shell: bash
+      run: |
+        perl -0777 -ne 'while (/<testcase\b([^>]*)>\s*<skipped\b([^>]*)/g) { my ($t,$s)=($1,$2); my ($n)=$t=~/\bname="([^"]*)"/; my ($c)=$t=~/\bclassname="([^"]*)"/; my ($m)=$s=~/\bmessage="([^"]*)"/; print "SKIPPED: $c.$n -- reason: ".(defined $m ? $m : "no message recorded")."\n" }' target/surefire-reports/TEST-*.xml
+    - name: Upload Maven build artifacts
+      if: success() && matrix.os == 'ubuntu-latest' && matrix.java == 8
+      uses: actions/upload-artifact@v4
+      with:
+        name: built-jars
+        path: target/commons-io-*.jar
+        if-no-files-found: error

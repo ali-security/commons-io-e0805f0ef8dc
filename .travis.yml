@@ -22,7 +22,8 @@ cache:
 jdk:
   - openjdk8
   - openjdk11
-  - openjdk14
+  # openjdk14 dropped: Travis installs it via the BellSoft apt repo, which no longer
+  # carries bellsoft-java14; Java 14 stays covered by .github/workflows/maven.yml.
   - openjdk-ea
   - oraclejdk11
 
@@ -36,6 +37,9 @@ matrix:
 # --no-transfer-progress requires Maven 3.6.1+. Otherwise use --batch-mode
 script:
   - mvn -V --no-transfer-progress
+  # Print each skipped test and its reason from the Surefire XML reports.
+  - |
+    perl -0777 -ne 'while (/<testcase\b([^>]*)>\s*<skipped\b([^>]*)/g) { my ($t,$s)=($1,$2); my ($n)=$t=~/\bname="([^"]*)"/; my ($c)=$t=~/\bclassname="([^"]*)"/; my ($m)=$s=~/\bmessage="([^"]*)"/; print "SKIPPED: $c.$n -- reason: ".(defined $m ? $m : "no message recorded")."\n" }' target/surefire-reports/TEST-*.xml
 
 after_success:
   - mvn -V --no-transfer-progress clean cobertura:cobertura coveralls:report -Ptravis-cobertura
